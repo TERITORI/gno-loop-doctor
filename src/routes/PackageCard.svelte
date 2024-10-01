@@ -40,14 +40,19 @@
 	<div>
 		<a style="color: black;" href="/#{name}" on:click={() => window.scrollTo(0, 0)}>📜 log</a>
 		{#if elem.tx.success}
-			<a style="color: black;" href="https://{name}" target="_blank">𖣐 gnoweb</a>
+			<a style="color: black;" href="https://{name}" target="_blank">𖣐 web</a>
 			{#if elem.tx.block_height > 0}
 				<a
 					style="color: black;"
 					href="https://gnoscan.io/realms/details?chainId=portal-loop&path={name}"
-					target="_blank">🩻 gnoscan</a
+					target="_blank">🩻 scan</a
 				>
 			{/if}
+			<a
+				style="color: black;"
+				href="https://gno.studio/connect/view/{name}?network=portal-loop"
+				target="_blank">🎙️ studio</a
+			>
 		{/if}
 	</div>
 </div>
