@@ -9,38 +9,6 @@
 
 	let onlyGenesis = writable(true);
 
-	const genesisQuery = gql`
-		query {
-			transactions(filter: { message: { type_url: add_package }, to_block_height: 1 }) {
-				index
-				hash
-				success
-				block_height
-				gas_wanted
-				gas_used
-				memo
-				messages {
-					typeUrl
-					route
-					value {
-						... on MsgAddPackage {
-							creator
-							package {
-								path
-							}
-							deposit
-						}
-					}
-				}
-				response {
-					data
-					info
-					log
-				}
-			}
-		}
-	`;
-
 	const allQuery = gql`
 		query {
 			transactions(filter: { message: { type_url: add_package } }) {
@@ -73,41 +41,53 @@
 		}
 	`;
 
-	const query = createQuery(
-		derived(onlyGenesis, ($onlyGenesis) => ({
-			queryKey: ['packages', $onlyGenesis],
-			staleTime: Infinity,
-			queryFn: async () => {
-				const res = await request(endpoint, $onlyGenesis ? genesisQuery : allQuery);
+	const query = createQuery({
+		queryKey: ['pkg-txs'],
+		staleTime: Infinity,
+		queryFn: async () => {
+			const res = await request(endpoint, allQuery);
+			return res;
+		}
+	});
 
-				// TODO: extract and type
-				const txs = (res as any).transactions;
-				const packages: { [key: string]: { tx: any; msg: any } } = {};
-				for (const tx of txs) {
-					let i = 0;
-					for (const msg of tx.messages) {
-						const path = msg.value.package.path;
-						if (
-							!path ||
-							(packages[path] && packages[path].tx.response.log.includes(`msg:${i},success:true,`))
-						) {
-							i++;
-							continue;
-						}
-						packages[path] = {
-							tx,
-							msg
-						};
-						i++;
-					}
-				}
-
-				return { map: packages, list: Object.entries(packages).reverse() };
+	const filtered = derived([query, onlyGenesis], ([$query, $onlyGenesis]) => {
+		if (!$query.data) {
+			return { map: {}, list: [] };
+		}
+		const txs = ($query.data as any).transactions;
+		const packages: { [key: string]: { tx: any; msg: any; path: string } } = {};
+		for (const tx of txs) {
+			if ($onlyGenesis && tx.block_height > 0) {
+				break;
 			}
-		}))
-	);
+			let i = 0;
+			for (const msg of tx.messages) {
+				const path = msg.value.package.path;
+				if (
+					!path ||
+					(packages[path] && packages[path].tx.response.log.includes(`msg:${i},success:true,`))
+				) {
+					i++;
+					continue;
+				}
+				packages[path] = {
+					path,
+					tx,
+					msg
+				};
+				i++;
+			}
+		}
+
+		return { map: packages, list: Object.entries(packages).reverse() };
+	});
 
 	let search: string = '';
+
+	const selectedPkgPath = derived(page, ($page) => {
+		const hash = $page.url.hash;
+		return hash && hash.length > 1 ? hash.substring(1) : '';
+	});
 </script>
 
 <div style="display: flex; justify-content: center; width: 100%;">
@@ -142,7 +122,7 @@
 				<div
 					style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 5px; width: 100%"
 				>
-					{#each $query.data.list.filter(([name]) => !search || name
+					{#each $filtered.list.filter(([name]) => !search || name
 								.toLowerCase()
 								.includes(search.toLowerCase())) as [name, elem]}
 						<PackageCard minify {name} {elem} />
@@ -156,12 +136,7 @@
 						<img src="/favicon.png" alt="logo" style="height: 58.5px;" />
 					</a>
 					<div style="flex-grow: 1;">
-						<PackageCard
-							name={$page.url.hash && $page.url.hash.length > 1 ? $page.url.hash.substring(1) : ''}
-							elem={$query.data.map[
-								$page.url.hash && $page.url.hash.length > 1 ? $page.url.hash.substring(1) : ''
-							]}
-						/>
+						<PackageCard name={$selectedPkgPath} elem={$filtered.map[$selectedPkgPath]} />
 					</div>
 					<div>
 						<input type="checkbox" bind:checked={$onlyGenesis} />
@@ -171,9 +146,7 @@
 				<p
 					style="margin: 0; padding: 0; padding: 5px; padding-left: 9px; padding-right: 9px; white-space: pre-wrap; text-align: left; color: white; background-color: black; border-radius: 5px"
 				>
-					{$query.data.map[
-						$page.url.hash && $page.url.hash.length > 1 ? $page.url.hash.substring(1) : ''
-					].tx.response.log}
+					{$filtered.map[$selectedPkgPath].tx.response.log}
 				</p>
 			</div>
 		{/if}
