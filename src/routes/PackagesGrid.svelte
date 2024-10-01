@@ -3,73 +3,109 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import PackageCard from './PackageCard.svelte';
 	import { page } from '$app/stores';
+	import { derived, writable } from 'svelte/store';
 
 	const endpoint = 'https://indexer.portal-loop.gno.testnet.teritori.com/graphql/query';
 
-	const query = createQuery({
-		queryKey: ['packages'],
-		staleTime: Infinity,
-		queryFn: async () => {
-			const res = await request(
-				endpoint,
-				gql`
-					query {
-						transactions(filter: { message: { type_url: add_package }, to_block_height: 1 }) {
-							index
-							hash
-							success
-							block_height
-							gas_wanted
-							gas_used
-							memo
-							messages {
-								typeUrl
-								route
-								value {
-									... on MsgAddPackage {
-										creator
-										package {
-											path
-										}
-										deposit
-									}
-								}
+	let onlyGenesis = writable(true);
+
+	const genesisQuery = gql`
+		query {
+			transactions(filter: { message: { type_url: add_package }, to_block_height: 1 }) {
+				index
+				hash
+				success
+				block_height
+				gas_wanted
+				gas_used
+				memo
+				messages {
+					typeUrl
+					route
+					value {
+						... on MsgAddPackage {
+							creator
+							package {
+								path
 							}
-							response {
-								data
-								info
-								log
-							}
+							deposit
 						}
 					}
-				`
-			);
-
-			// TODO: extract and type
-			const txs = (res as any).transactions;
-			const packages: { [key: string]: { tx: any; msg: any } } = {};
-			for (const tx of txs) {
-				let i = 0;
-				for (const msg of tx.messages) {
-					const path = msg.value.package.path;
-					if (
-						!path ||
-						(packages[path] && packages[path].tx.response.log.includes(`msg:${i},success:true,`))
-					) {
-						i++;
-						continue;
-					}
-					packages[path] = {
-						tx,
-						msg
-					};
-					i++;
+				}
+				response {
+					data
+					info
+					log
 				}
 			}
-
-			return { map: packages, list: Object.entries(packages).reverse() };
 		}
-	});
+	`;
+
+	const allQuery = gql`
+		query {
+			transactions(filter: { message: { type_url: add_package } }) {
+				index
+				hash
+				success
+				block_height
+				gas_wanted
+				gas_used
+				memo
+				messages {
+					typeUrl
+					route
+					value {
+						... on MsgAddPackage {
+							creator
+							package {
+								path
+							}
+							deposit
+						}
+					}
+				}
+				response {
+					data
+					info
+					log
+				}
+			}
+		}
+	`;
+
+	const query = createQuery(
+		derived(onlyGenesis, ($onlyGenesis) => ({
+			queryKey: ['packages', $onlyGenesis],
+			staleTime: Infinity,
+			queryFn: async () => {
+				const res = await request(endpoint, $onlyGenesis ? genesisQuery : allQuery);
+
+				// TODO: extract and type
+				const txs = (res as any).transactions;
+				const packages: { [key: string]: { tx: any; msg: any } } = {};
+				for (const tx of txs) {
+					let i = 0;
+					for (const msg of tx.messages) {
+						const path = msg.value.package.path;
+						if (
+							!path ||
+							(packages[path] && packages[path].tx.response.log.includes(`msg:${i},success:true,`))
+						) {
+							i++;
+							continue;
+						}
+						packages[path] = {
+							tx,
+							msg
+						};
+						i++;
+					}
+				}
+
+				return { map: packages, list: Object.entries(packages).reverse() };
+			}
+		}))
+	);
 
 	let search: string = '';
 </script>
@@ -98,6 +134,10 @@
 							bind:value={search}
 						/>
 					</div>
+					<div>
+						<input type="checkbox" bind:checked={$onlyGenesis} />
+						Genesis Only
+					</div>
 				</div>
 				<div
 					style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 5px; width: 100%"
@@ -122,6 +162,10 @@
 								$page.url.hash && $page.url.hash.length > 1 ? $page.url.hash.substring(1) : ''
 							]}
 						/>
+					</div>
+					<div>
+						<input type="checkbox" bind:checked={$onlyGenesis} />
+						Genesis Only
 					</div>
 				</div>
 				<p
