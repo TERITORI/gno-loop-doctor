@@ -59,12 +59,13 @@ func main() {
 
 						if prevCmd != nil {
 							if err := prevCmd.Process.Kill(); err != nil {
-								return fmt.Errorf("failed to stop previous instance: %w", err)
+								logger.Error("failed to stop previous instance", zap.Error(err))
 							}
 							if err := prevCmd.Wait(); err != nil {
-								return fmt.Errorf("failed to wait end of previous instance: %w", err)
+								logger.Error("failed to wait end of previous instance", zap.Error(err))
 							}
 							logger.Info("stopped previous instance")
+							prevCmd = nil
 						}
 
 						// clear db

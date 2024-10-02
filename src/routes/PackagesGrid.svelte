@@ -8,6 +8,7 @@
 	const endpoint = 'https://indexer.portal-loop.gno.testnet.teritori.com/graphql/query';
 
 	let onlyGenesis = writable(true);
+	let onlyFailing = writable(false);
 
 	const allQuery = gql`
 		query {
@@ -50,37 +51,45 @@
 		}
 	});
 
-	const filtered = derived([query, onlyGenesis], ([$query, $onlyGenesis]) => {
-		if (!$query.data) {
-			return { map: {}, list: [] };
-		}
-		const txs = ($query.data as any).transactions;
-		const packages: { [key: string]: { tx: any; msg: any; path: string } } = {};
-		for (const tx of txs) {
-			if ($onlyGenesis && tx.block_height > 0) {
-				break;
+	const filtered = derived(
+		[query, onlyGenesis, onlyFailing],
+		([$query, $onlyGenesis, $onlyFailing]) => {
+			if (!$query.data) {
+				return { map: {}, list: [] };
 			}
-			let i = 0;
-			for (const msg of tx.messages) {
-				const path = msg.value.package.path;
-				if (
-					!path ||
-					(packages[path] && packages[path].tx.response.log.includes(`msg:${i},success:true,`))
-				) {
-					i++;
-					continue;
+			const txs = ($query.data as any).transactions;
+			const packages: { [key: string]: { tx: any; msg: any; path: string } } = {};
+			for (const tx of txs) {
+				if ($onlyGenesis && tx.block_height > 0) {
+					break;
 				}
-				packages[path] = {
-					path,
-					tx,
-					msg
-				};
-				i++;
+				let i = 0;
+				for (const msg of tx.messages) {
+					const path = msg.value.package.path;
+					if (
+						!path ||
+						(packages[path] && packages[path].tx.response.log.includes(`msg:${i},success:true,`))
+					) {
+						i++;
+						continue;
+					}
+					packages[path] = {
+						path,
+						tx,
+						msg
+					};
+					i++;
+				}
 			}
-		}
 
-		return { map: packages, list: Object.entries(packages).reverse() };
-	});
+			return {
+				map: packages,
+				list: Object.entries(packages)
+					.reverse()
+					.filter(([, pkg]) => !$onlyFailing || !pkg.tx.success)
+			};
+		}
+	);
 
 	let search: string = '';
 
@@ -114,9 +123,15 @@
 							bind:value={search}
 						/>
 					</div>
-					<div>
-						<input type="checkbox" bind:checked={$onlyGenesis} />
-						Genesis Only
+					<div style="display: flex; flex-direction: column;">
+						<div>
+							<input type="checkbox" bind:checked={$onlyGenesis} />
+							Genesis Only
+						</div>
+						<div>
+							<input type="checkbox" bind:checked={$onlyFailing} />
+							Failing Only
+						</div>
 					</div>
 				</div>
 				<div
@@ -138,9 +153,11 @@
 					<div style="flex-grow: 1;">
 						<PackageCard name={$selectedPkgPath} elem={$filtered.map[$selectedPkgPath]} />
 					</div>
-					<div>
-						<input type="checkbox" bind:checked={$onlyGenesis} />
-						Genesis Only
+					<div style="display: flex; flex-direction: column;">
+						<div>
+							<input type="checkbox" bind:checked={$onlyGenesis} />
+							Genesis Only
+						</div>
 					</div>
 				</div>
 				<p
