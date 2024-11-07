@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM ghcr.io/gnolang/tx-indexer:0.5.1 AS tx-indexer
+FROM rg.nl-ams.scw.cloud/teritori/gno-tx-indexer:a39640a AS tx-indexer
 
 # Build the application from source
 FROM golang:1.22 AS build-stage
@@ -21,7 +21,7 @@ WORKDIR /
 
 COPY --from=build-stage /app/indexer-runner /indexer-runner
 
-COPY --from=tx-indexer /tx-indexer /gno-tx-indexer
+COPY --from=tx-indexer /usr/local/bin/indexer /gno-tx-indexer
 
 EXPOSE 8546
 
